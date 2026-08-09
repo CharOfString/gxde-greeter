@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/img">
         <file alias="example-wallpaper.png">img/example-wallpaper.png</file>
+        <file alias="example-wallpaper-deepin.jpg">img/example-wallpaper-deepin.jpg</file>
     </qresource>
     <qresource prefix="/icons">
         <file alias="power.svg">icons/power.svg</file>

@@ -142,7 +142,7 @@ int main(int argc, char* argv[]) {
   const GxdeReleaseInfo gxdeRelease = detectGxdeRelease();
   QVariantMap init_prop;
   init_prop.insert("backgroundUri",
-    QUrl("qrc:/img/example-wallpaper.png"));
+    QUrl("qrc:/img/example-wallpaper-deepin.jpg"));
   init_prop.insert("isGxdeOs", gxdeRelease.isGxde);
   init_prop.insert("gxdeReleaseLabel", gxdeRelease.label);
   engine.setInitialProperties(init_prop);
