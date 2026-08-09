@@ -26,4 +26,9 @@
 #define GXDE25_LOONGARCH_UNSTABLE_CODENAME "Hetao"
 #define GXDE25_LOONGARCH_UNSTABLE_CODENAME_CN "核桃"
 
+#define GXDE_QUOTE_BEGIN " · \""
+#define GXDE_QUOTE_END "\""
+#define GXDE_QUOTE_BEGIN_CN " · 「"
+#define GXDE_QUOTE_END_CN "」"
+
 #endif  // SRC_UTILS_MACROS_H_

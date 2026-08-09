@@ -13,6 +13,8 @@
 // this program. If not, see <https://www.gnu.org/licenses/>.
 
 import QtQuick
+import QtQuick.Controls
+import QtQuick.Effects
 import QtQuick.Window
 
 Window {
@@ -20,6 +22,12 @@ Window {
 
   property url backgroundUri: ""
   property date now: new Date()
+  property color iconTint: "white"
+  property bool isGxdeOs: false
+  property string gxdeReleaseLabel: ""
+  property real activeBackgroundScale: 1.08
+  property real activeBackgroundBlur: 0.55
+  property real loginProgress: clockView.positionedAtTop ? 1.0 : 0.0
   readonly property var weekdays: [
     "星期日",
     "星期一",
@@ -40,11 +48,23 @@ Window {
   title: "GXDM Greeter"
   color: "#101010"
 
+  Behavior on loginProgress {
+    NumberAnimation {
+      duration: 250
+      easing.type: Easing.Linear
+    }
+  }
+
   function dateLabel(value) {
     return value.getFullYear() + "年"
       + (value.getMonth() + 1) + "月"
       + value.getDate() + "日 "
       + weekdays[value.getDay()]
+  }
+
+  function requestLogin() {
+    clockView.positionedAtTop = true
+    root.loginRequested()
   }
 
   Timer {
@@ -54,22 +74,45 @@ Window {
     onTriggered: root.now = new Date()
   }
 
-  Image {
-    anchors.fill: parent
-    source: root.backgroundUri
-    fillMode: Image.PreserveAspectCrop
-    asynchronous: true
-    cache: false
-    smooth: true
-    visible: root.backgroundUri.toString() !== ""
-  }
+  Item {
+    id: backgroundLayer
 
-  Rectangle {
     anchors.fill: parent
-    visible: root.backgroundUri.toString() === ""
-    gradient: Gradient {
-      GradientStop { position: 0; color: "#e9def8" }
-      GradientStop { position: 1; color: "#cfdff2" }
+    scale: 1.0 + (root.activeBackgroundScale - 1.0) * root.loginProgress
+
+    Item {
+      id: backgroundSource
+
+      anchors.fill: parent
+
+      Image {
+        anchors.fill: parent
+        source: root.backgroundUri
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        cache: false
+        smooth: true
+        visible: root.backgroundUri.toString() !== ""
+      }
+
+      Rectangle {
+        anchors.fill: parent
+        visible: root.backgroundUri.toString() === ""
+        gradient: Gradient {
+          GradientStop { position: 0; color: "#e9def8" }
+          GradientStop { position: 1; color: "#cfdff2" }
+        }
+      }
+    }
+
+    MultiEffect {
+      anchors.fill: backgroundSource
+      source: backgroundSource
+      visible: root.loginProgress > 0
+      blurEnabled: true
+      blurMax: 32
+      blur: root.activeBackgroundBlur * root.loginProgress
+      autoPaddingEnabled: false
     }
   }
 
@@ -92,24 +135,44 @@ Window {
     Component.onCompleted: forceActiveFocus()
 
     Keys.onPressed: (event) => {
-      root.loginRequested()
+      if (event.key === Qt.Key_Escape) {
+        clockView.positionedAtTop = false
+      } else {
+        root.requestLogin()
+      }
       event.accepted = true
     }
   }
 
-  Item {
-    id: centerPanel
+  TapHandler {
+    acceptedButtons: Qt.AllButtons
+    onTapped: root.requestLogin()
+  }
 
-    anchors.centerIn: parent
+  Item {
+    id: clockView
+
+    property bool positionedAtTop: false
+
+    x: (parent.width - width) / 2
+    y: positionedAtTop ? 72 : (parent.height - height) / 2
     width: Math.max(timeLabel.width, promptLabel.width)
-    height: timeLabel.height + 18 + promptLabel.height
+    height: timeLabel.inkHeight + 8 + promptLabel.inkHeight
+
+    Behavior on y {
+      NumberAnimation {
+        duration: 250
+        easing.type: Easing.OutExpo
+      }
+    }
 
     ShadowText {
       id: timeLabel
 
       anchors.horizontalCenter: parent.horizontalCenter
+      y: -inkTop
       text: Qt.formatTime(root.now, "hh:mm")
-      pixelSize: 72
+      pixelSize: 48
       weight: Font.Black
       shadowOpacity: 0.24
     }
@@ -118,42 +181,76 @@ Window {
       id: promptLabel
 
       anchors.horizontalCenter: parent.horizontalCenter
-      y: timeLabel.height + 18
-      text: "按任意键登录"
-      pixelSize: 24
-      weight: Font.Normal
+      y: timeLabel.inkHeight + 8 - inkTop
+      text: dateLabel(root.now)
+      pixelSize: 16
+      weight: Font.Light
       shadowOpacity: 0.22
     }
   }
 
-  ShadowText {
+  Item {
+    id: gxdeInfoView
+
+    property bool meetsAdditionalVisibilityConditions: true
+    property real revealProgress: clockView.positionedAtTop ? 1.0 : 0.0
+    readonly property real bottomMargin: 12
+    readonly property real hiddenY: parent.height - height / 2
+    readonly property real shownY: parent.height - height - bottomMargin
+    readonly property real logoRightInkPadding: gxdeLogo.width * 5 / 150
+    readonly property real versionLeftMargin: 5 - logoRightInkPadding
+    readonly property rect versionInkBounds:
+      versionMetrics.tightBoundingRect(gxdeVersion.text)
+    readonly property real versionInkTop:
+      gxdeVersion.baselineOffset + versionInkBounds.y
+
     anchors.left: parent.left
-    anchors.leftMargin: 21
-    anchors.bottom: parent.bottom
-    anchors.bottomMargin: 9
-    text: root.dateLabel(root.now)
-    pixelSize: 24
-    weight: Font.Normal
-    shadowOpacity: 0.22
-  }
+    anchors.leftMargin: 12
+    visible: root.isGxdeOs
+      && root.gxdeReleaseLabel.length > 0
+      && (clockView.positionedAtTop || revealProgress > 0)
+      && meetsAdditionalVisibilityConditions
+    opacity: revealProgress
+    y: hiddenY + (shownY - hiddenY) * revealProgress
+    width: gxdeLogo.width + versionLeftMargin + gxdeVersion.implicitWidth
+    height: gxdeLogo.height
 
-  Row {
-    anchors.right: parent.right
-    anchors.rightMargin: 22
-    anchors.bottom: parent.bottom
-    anchors.bottomMargin: 13
-    width: implicitWidth
-    height: implicitHeight
-    spacing: 15
-
-    IconButton {
-      iconName: "keyboard"
-      onClicked: root.keyboardLayoutRequested()
+    Behavior on revealProgress {
+      NumberAnimation {
+        duration: 140
+        easing.type: Easing.OutCubic
+      }
     }
 
-    IconButton {
-      iconName: "power"
-      onClicked: root.powerRequested()
+    FontMetrics {
+      id: versionMetrics
+      font: gxdeVersion.font
+    }
+
+    Image {
+      id: gxdeLogo
+      anchors.bottom: parent.bottom
+      anchors.left: parent.left
+
+      width: Math.round(height * 150 / 35)
+      height: 32
+      source: "qrc:/icons/gxde.png"
+      fillMode: Image.PreserveAspectFit
+      smooth: true
+      mipmap: false
+    }
+
+    Text {
+      id: gxdeVersion
+      anchors.left: gxdeLogo.right
+      anchors.leftMargin: gxdeInfoView.versionLeftMargin
+      y: -gxdeInfoView.versionInkTop
+      text: root.gxdeReleaseLabel
+      color: "#d0d0d0"
+      font.family: "Source Han Sans"
+      font.pixelSize: 10
+      font.weight: Font.Light
+      renderType: Text.NativeRendering
     }
   }
 
@@ -164,11 +261,19 @@ Window {
     property int pixelSize: 24
     property int weight: Font.Normal
     property real shadowOpacity: 0.25
+    readonly property rect inkBounds: textMetrics.tightBoundingRect(label.text)
+    readonly property real inkTop: label.baselineOffset + inkBounds.y
+    readonly property real inkHeight: inkBounds.height
 
     implicitWidth: label.implicitWidth + 4
     implicitHeight: label.implicitHeight + 4
     width: implicitWidth
     height: implicitHeight
+
+    FontMetrics {
+      id: textMetrics
+      font: label.font
+    }
 
     Text {
       x: 2
@@ -191,75 +296,29 @@ Window {
     }
   }
 
-  component IconButton: Item {
+  component IconButton: ToolButton {
     id: iconButton
 
-    property string iconName: ""
-    signal clicked()
+    property url source
+    property color tint: "white"
 
     width: 32
     height: 32
+    padding: 4
+    focusPolicy: Qt.NoFocus
+    hoverEnabled: true
+    display: AbstractButton.IconOnly
+    icon.source: iconButton.source
+    icon.width: 24
+    icon.height: 24
+    icon.color: iconButton.tint
+    opacity: hovered ? 1.0 : 0.86
 
-    Canvas {
-      anchors.fill: parent
-      opacity: iconMouse.containsMouse ? 1.0 : 0.86
-
-      onPaint: {
-        var ctx = getContext("2d")
-        ctx.reset()
-        ctx.strokeStyle = "white"
-        ctx.fillStyle = "white"
-        ctx.lineWidth = 2
-        ctx.lineCap = "round"
-        ctx.lineJoin = "round"
-
-        if (iconButton.iconName === "keyboard") {
-          roundedRect(ctx, 3, 8, 26, 16, 3)
-          ctx.stroke()
-
-          for (var row = 0; row < 2; ++row) {
-            for (var col = 0; col < 4; ++col) {
-              ctx.fillRect(7 + col * 5.4, 12 + row * 5, 1.6, 1.6)
-            }
-          }
-
-          ctx.beginPath()
-          ctx.moveTo(13, 22)
-          ctx.lineTo(19, 22)
-          ctx.stroke()
-        } else {
-          ctx.beginPath()
-          ctx.arc(16, 18, 9, Math.PI * 0.72, Math.PI * 2.28, false)
-          ctx.stroke()
-
-          ctx.beginPath()
-          ctx.moveTo(16, 6)
-          ctx.lineTo(16, 15)
-          ctx.stroke()
-        }
-      }
-
-      function roundedRect(ctx, x, y, width, height, radius) {
-        ctx.beginPath()
-        ctx.moveTo(x + radius, y)
-        ctx.lineTo(x + width - radius, y)
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius)
-        ctx.lineTo(x + width, y + height - radius)
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height)
-        ctx.lineTo(x + radius, y + height)
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius)
-        ctx.lineTo(x, y + radius)
-        ctx.quadraticCurveTo(x, y, x + radius, y)
-        ctx.closePath()
-      }
+    background: Item {
     }
 
-    MouseArea {
-      id: iconMouse
-      anchors.fill: parent
-      hoverEnabled: true
+    HoverHandler {
       cursorShape: Qt.PointingHandCursor
-      onClicked: iconButton.clicked()
     }
   }
 }

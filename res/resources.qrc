@@ -2,4 +2,9 @@
     <qresource prefix="/img">
         <file alias="example-wallpaper.png">img/example-wallpaper.png</file>
     </qresource>
+    <qresource prefix="/icons">
+        <file alias="power.svg">icons/power.svg</file>
+        <file alias="keyboard.svg">icons/keyboard.svg</file>
+        <file alias="gxde.png">icons/gxde.png</file>
+    </qresource>
 </RCC>
