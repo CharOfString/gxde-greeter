@@ -36,15 +36,14 @@ get_filename_component(qml_alias "${cur}" NAME)
 set_source_files_properties("${cur}" PROPERTIES QT_RESOURCE_ALIAS "${qml_alias}")
 endforeach()
 
-qt_add_executable(gxde-greeter
-  src/main.cc
+qt_add_resources(GREETER_RESOURCES
+  res/resources.qrc
 )
 
-qt_add_resources(gxde-greeter "greeter_assets"
-  PREFIX "/img"
-  BASE "res/img"
-  FILES
-    res/img/example-wallpaper.png
+qt_add_executable(gxde-greeter
+  ${GREETER_RESOURCES}
+  src/main.cc
+  src/utils/macros.h
 )
 
 qt_add_qml_module(gxde-greeter
