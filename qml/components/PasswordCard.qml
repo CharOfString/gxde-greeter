@@ -8,7 +8,9 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Effects
 
-// Modal password dialog for the chosen user. The frame follows the DTK menus
+// Modal login dialog, either for a chosen user (avatar and name above the
+// password) or, with askUserName, for a user not in the list (user name and
+// password fields, no avatar). The frame follows the DTK menus
 // of gxde-dock's V23 mode (frame/util/styledmenu.cpp, v23menustyle.cpp):
 // radius 8, frosted translucent window color, a dark outer and a light inner
 // hairline and a soft drop shadow.
@@ -17,6 +19,7 @@ Popup {
 
   property bool light: false
   property Item backdrop: null
+  property bool askUserName: false
   property string userName: ""
   property url userAvatar
   property string errorText: ""
@@ -41,7 +44,9 @@ Popup {
   // Horizontal nudge for the failure shake; the owner adds it to x.
   property real shakeOffset: 0
 
-  signal submitted(string password)
+  // userName is what was typed in askUserName mode, else the userName
+  // property.
+  signal submitted(string userName, string password)
 
   function showError(message) {
     card.errorText = message
@@ -51,12 +56,21 @@ Popup {
     shakeAnimation.restart()
   }
 
+  function enteredUserName() {
+    return card.askUserName ? userNameField.text.trim() : card.userName
+  }
+
+  function canSubmit() {
+    return !card.busy && passwordField.text.length > 0
+      && enteredUserName().length > 0
+  }
+
   function submit() {
-    if (card.busy || passwordField.text.length === 0) {
+    if (!canSubmit()) {
       return
     }
     card.errorText = ""
-    card.submitted(passwordField.text)
+    card.submitted(enteredUserName(), passwordField.text)
   }
 
   width: 300
@@ -70,12 +84,19 @@ Popup {
 
   onAboutToShow: {
     card.shown = true
+    userNameField.clear()
     passwordField.clear()
     card.errorText = ""
     card.busy = false
   }
   onAboutToHide: card.shown = false
-  onOpened: passwordField.forceActiveFocus()
+  onOpened: {
+    if (card.askUserName) {
+      userNameField.forceActiveFocus()
+    } else {
+      passwordField.forceActiveFocus()
+    }
+  }
 
   Overlay.modal: Rectangle {
     color: "#33000000"
@@ -273,15 +294,16 @@ Popup {
       width: 64
       height: 64
       radius: 13
+      visible: !card.askUserName
       source: card.userAvatar
       name: card.userName
     }
 
     Text {
       width: parent.width
-      topPadding: 10
+      topPadding: card.askUserName ? 0 : 10
       bottomPadding: 16
-      text: card.userName
+      text: card.askUserName ? qsTr("其他用户") : card.userName
       color: card.textColor
       font.pixelSize: 15
       font.weight: Font.Medium
@@ -290,49 +312,44 @@ Popup {
       renderType: Text.NativeRendering
     }
 
-    TextField {
+    CardField {
+      id: userNameField
+
+      visible: card.askUserName
+      placeholderText: qsTr("用户名")
+      inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+      onAccepted: {
+        if (passwordField.text.length > 0) {
+          card.submit()
+        } else {
+          passwordField.forceActiveFocus()
+        }
+      }
+    }
+
+    Item {
+      width: 1
+      height: 8
+      visible: card.askUserName
+    }
+
+    CardField {
       id: passwordField
 
-      width: parent.width
-      height: 36
-      leftPadding: 10
       rightPadding: submitButton.width + 8
-      verticalAlignment: TextInput.AlignVCenter
       echoMode: TextInput.Password
       passwordCharacter: "\u2022"
       placeholderText: qsTr("密码")
-      placeholderTextColor: card.secondaryTextColor
-      color: card.textColor
-      selectionColor: card.highlightColor
-      selectedTextColor: card.highlightedTextColor
-      font.pixelSize: 14
-      enabled: !card.busy
       inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
-      onTextEdited: card.errorText = ""
+      showError: card.errorText.length > 0
       onAccepted: card.submit()
-
-      background: Rectangle {
-        radius: card.itemRadius
-        color: card.fieldColor
-        border.width: card.errorText.length > 0 || passwordField.activeFocus
-          ? 1 : 0
-        border.color: card.errorText.length > 0 ? card.warningColor
-          : card.light ? "#66000000" : "#99ffffff"
-
-        Behavior on border.color {
-          ColorAnimation {
-            duration: 160
-          }
-        }
-      }
 
       // A faint tinted rounded rect, only a shade off the field; the arrow
       // brightens once there is something to submit.
       Button {
         id: submitButton
 
-        readonly property bool ready: !card.busy
-          && passwordField.text.length > 0
+        readonly property bool ready: card.canSubmit()
 
         anchors.right: parent.right
         anchors.rightMargin: 4
@@ -417,6 +434,43 @@ Popup {
             duration: 180
             easing.type: Easing.OutCubic
           }
+        }
+      }
+    }
+  }
+
+  component CardField: TextField {
+    id: field
+
+    property bool showError: false
+
+    width: parent ? parent.width : 0
+    height: 36
+    leftPadding: 10
+    rightPadding: 10
+    verticalAlignment: TextInput.AlignVCenter
+    placeholderTextColor: card.secondaryTextColor
+    color: card.textColor
+    selectionColor: card.highlightColor
+    selectedTextColor: card.highlightedTextColor
+    font.pixelSize: 14
+    enabled: !card.busy
+    onTextEdited: card.errorText = ""
+
+    background: Rectangle {
+      radius: card.itemRadius
+      color: card.fieldColor
+      // Always 1px wide so focus fades the border in through its alpha
+      // instead of popping it on.
+      border.width: 1
+      border.color: field.showError ? card.warningColor
+        : field.activeFocus ? (card.light ? "#66000000" : "#99ffffff")
+        : (card.light ? "#00000000" : "#00ffffff")
+
+      Behavior on border.color {
+        ColorAnimation {
+          duration: 160
+          easing.type: Easing.OutCubic
         }
       }
     }

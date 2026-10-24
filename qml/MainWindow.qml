@@ -36,6 +36,8 @@ Window {
   // To hook up a backend:
   //   1. Set authBackendAvailable to true, which turns the fake check off.
   //   2. Handle passwordSubmitted(index, user, password) and authenticate.
+  //      For a user typed into the "not listed" dialog, index is -1 and
+  //      user only carries username / fullName.
   //   3. On failure call showPasswordError() (no argument shows "鉴权失败").
   property bool authBackendAvailable: false
   readonly property var weekdays: [
@@ -83,10 +85,20 @@ Window {
   }
 
   function openPasswordDialog(index, user) {
+    passwordCard.askUserName = false
     passwordCard.userIndex = index
     passwordCard.user = user
     passwordCard.userName = userSelecter.fullNameFor(user)
     passwordCard.userAvatar = userSelecter.avatarFor(user)
+    passwordCard.open()
+  }
+
+  function openManualLoginDialog() {
+    passwordCard.askUserName = true
+    passwordCard.userIndex = -1
+    passwordCard.user = null
+    passwordCard.userName = ""
+    passwordCard.userAvatar = ""
     passwordCard.open()
   }
 
@@ -234,7 +246,10 @@ Window {
           root.userSelected(index, user)
           root.openPasswordDialog(index, user)
         }
-        onNotListedRequested: root.manualLoginRequested()
+        onNotListedRequested: {
+          root.manualLoginRequested()
+          root.openManualLoginDialog()
+        }
       }
 
       Item {
@@ -372,8 +387,9 @@ Window {
     x: Math.round((parent.width - width) / 2 + shakeOffset)
     y: Math.round((parent.height - height) / 2)
     backdrop: windowContent
-    onSubmitted: (password) => {
-      root.passwordSubmitted(userIndex, user, password)
+    onSubmitted: (userName, password) => {
+      root.passwordSubmitted(userIndex, askUserName
+        ? { "username": userName, "fullName": userName } : user, password)
       if (!root.authBackendAvailable) {
         busy = true
         fakeAuthTimer.restart()
