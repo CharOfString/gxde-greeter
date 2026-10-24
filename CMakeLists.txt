@@ -46,11 +46,17 @@ qt_add_executable(gxde-greeter
   src/utils/macros.h
 )
 
+set_source_files_properties(qml/MainWindow.qml PROPERTIES
+  QT_RESOURCE_ALIAS MainWindow.qml)
+set_source_files_properties(qml/components/UserSelecter.qml PROPERTIES
+  QT_RESOURCE_ALIAS UserSelecter.qml)
+
 qt_add_qml_module(gxde-greeter
   URI Greeter
   VERSION 1.0
   QML_FILES
     qml/MainWindow.qml
+    qml/components/UserSelecter.qml
 )
 
 target_link_libraries(gxde-greeter PRIVATE

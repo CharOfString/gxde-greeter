@@ -16,12 +16,18 @@
 
 #include "utils/macros.h"
 
+#include <algorithm>
+#include <pwd.h>
+
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QHash>
 #include <QQmlApplicationEngine>
 #include <QStringList>
 #include <QUrl>
+#include <QVariantList>
 #include <QVariantMap>
 
 namespace {
@@ -133,6 +139,164 @@ GxdeReleaseInfo detectGxdeRelease() {
   return info;
 }
 
+struct UserIdRange {
+  quint64 minimum = 1000;
+  quint64 maximum = 60000;
+};
+
+UserIdRange detectUserIdRange() {
+  QFile file("/etc/login.defs");
+  UserIdRange range;
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    return range;
+  }
+
+  while (!file.atEnd()) {
+    const QString line = QString::fromUtf8(file.readLine()).trimmed();
+    if (line.isEmpty() || line.startsWith('#')) {
+      continue;
+    }
+
+    const QStringList fields = line.simplified().split(' ');
+    if (fields.size() < 2) {
+      continue;
+    }
+
+    bool ok = false;
+    const quint64 value = fields.at(1).toULongLong(&ok);
+    if (!ok) {
+      continue;
+    }
+
+    if (fields.first() == "UID_MIN") {
+      range.minimum = value;
+    } else if (fields.first() == "UID_MAX") {
+      range.maximum = value;
+    }
+  }
+
+  return range;
+}
+
+bool isLoginShell(const QString& shell) {
+  return !shell.isEmpty()
+    && !shell.endsWith("/nologin")
+    && !shell.endsWith("/false");
+}
+
+ReleaseData userAccountData(const QString& username) {
+  ReleaseData data = readReleaseData(
+    "/var/lib/AccountsService/users/" + username);
+  const ReleaseData deepinData = readReleaseData(
+    "/var/lib/AccountsService/deepin/users/" + username);
+  for (auto it = deepinData.cbegin(); it != deepinData.cend(); ++it) {
+    data.insert(it.key(), it.value());
+  }
+  return data;
+}
+
+QString localFilePath(const QString& reference) {
+  if (!reference.startsWith("file:", Qt::CaseInsensitive)) {
+    return reference;
+  }
+  return QUrl(reference).toLocalFile();
+}
+
+QString readableAvatarPath(const QString& reference) {
+  const QFileInfo avatar(localFilePath(reference));
+  if (!avatar.isFile() || !avatar.isReadable()) {
+    return {};
+  }
+
+  const QFileInfo largeAvatar(
+    avatar.dir().filePath("bigger/" + avatar.fileName()));
+  if (largeAvatar.isFile() && largeAvatar.isReadable()) {
+    return largeAvatar.absoluteFilePath();
+  }
+  return avatar.absoluteFilePath();
+}
+
+QString userAvatar(const QString& username, const QString& homePath,
+    const ReleaseData& accountData) {
+  const QStringList candidates = {
+    accountData.value("User/Icon"),
+    "/var/lib/AccountsService/icons/" + username,
+    QDir(homePath).filePath(".face"),
+    QDir(homePath).filePath(".face.icon"),
+    "/var/lib/AccountsService/icons/default.png"
+  };
+
+  for (const QString& candidate : candidates) {
+    const QString path = readableAvatarPath(candidate);
+    if (!path.isEmpty()) {
+      return QUrl::fromLocalFile(path).toString();
+    }
+  }
+  return {};
+}
+
+QVariantList detectUsers() {
+  const UserIdRange uidRange = detectUserIdRange();
+  QVariantList users;
+
+  setpwent();
+  while (const passwd* entry = getpwent()) {
+    const quint64 uid = entry->pw_uid;
+    if (uid < uidRange.minimum || uid > uidRange.maximum) {
+      continue;
+    }
+
+    const QString username = QString::fromLocal8Bit(entry->pw_name);
+    const QString shell = QString::fromLocal8Bit(entry->pw_shell);
+    const QString homePath = QString::fromLocal8Bit(entry->pw_dir);
+    if (username.isEmpty() || !isLoginShell(shell)) {
+      continue;
+    }
+
+    const ReleaseData accountData = userAccountData(username);
+    if (accountData.value("User/SystemAccount").compare(
+        "true", Qt::CaseInsensitive) == 0) {
+      continue;
+    }
+
+    QString fullName = accountData.value("User/RealName");
+    if (fullName.isEmpty()) {
+      fullName = QString::fromLocal8Bit(entry->pw_gecos).section(',', 0, 0);
+    }
+    if (fullName.isEmpty()) {
+      fullName = username;
+    }
+
+    QVariantMap user;
+    user.insert("username", username);
+    user.insert("fullName", fullName);
+    user.insert("avatar", userAvatar(username, homePath, accountData));
+    user.insert("uid", uid);
+    users.append(user);
+  }
+  endpwent();
+
+  std::sort(users.begin(), users.end(), [](const QVariant& left,
+      const QVariant& right) {
+    return left.toMap().value("username").toString().localeAwareCompare(
+      right.toMap().value("username").toString()) < 0;
+  });
+
+  if (users.size() < 10) {
+    for (int index = 1; index <= 10; ++index) {
+      const QString name = QString("USER%1").arg(index);
+      QVariantMap user;
+      user.insert("username", name);
+      user.insert("fullName", name);
+      user.insert("avatar", QString());
+      user.insert("uid", QVariant());
+      users.append(user);
+    }
+  }
+
+  return users;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -145,6 +309,7 @@ int main(int argc, char* argv[]) {
     QUrl("qrc:/img/example-wallpaper-deepin.jpg"));
   init_prop.insert("isGxdeOs", gxdeRelease.isGxde);
   init_prop.insert("gxdeReleaseLabel", gxdeRelease.label);
+  init_prop.insert("userModel", detectUsers());
   engine.setInitialProperties(init_prop);
 
   QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,

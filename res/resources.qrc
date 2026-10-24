@@ -7,5 +7,7 @@
         <file alias="power.svg">icons/power.svg</file>
         <file alias="keyboard.svg">icons/keyboard.svg</file>
         <file alias="gxde.png">icons/gxde.png</file>
+        <file alias="next.svg">icons/next.svg</file>
+        <file alias="prev.svg">icons/prev.svg</file>
     </qresource>
 </RCC>

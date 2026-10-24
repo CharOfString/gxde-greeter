@@ -25,6 +25,7 @@ Window {
   property color iconTint: "white"
   property bool isGxdeOs: false
   property string gxdeReleaseLabel: ""
+  property var userModel: []
   property real activeBackgroundScale: 1.08
   property real activeBackgroundBlur: 0.55
   property real loginProgress: clockView.positionedAtTop ? 1.0 : 0.0
@@ -39,6 +40,8 @@ Window {
   ]
 
   signal loginRequested()
+  signal userSelected(int index, var user)
+  signal manualLoginRequested()
   signal keyboardLayoutRequested()
   signal powerRequested()
 
@@ -189,6 +192,20 @@ Window {
     }
   }
 
+  UserSelecter {
+    id: userSelecter
+
+    anchors.centerIn: parent
+    width: Math.min(implicitWidth, Math.max(0, parent.width - 48))
+    model: root.userModel
+    foregroundColor: "white"
+    visible: clockView.positionedAtTop || root.loginProgress > 0
+    enabled: clockView.positionedAtTop
+    opacity: root.loginProgress
+    onUserConfirmed: (index, user) => root.userSelected(index, user)
+    onNotListedRequested: root.manualLoginRequested()
+  }
+
   Item {
     id: gxdeInfoView
 
@@ -251,6 +268,41 @@ Window {
       font.pixelSize: 10
       font.weight: Font.Light
       renderType: Text.NativeRendering
+    }
+  }
+
+  Row {
+    id: operationView
+
+    property real revealProgress: clockView.positionedAtTop ? 1.0 : 0.0
+    readonly property real bottomMargin: 12
+    readonly property real hiddenY: parent.height - height / 2
+    readonly property real shownY: parent.height - height - bottomMargin
+
+    anchors.right: parent.right
+    anchors.rightMargin: 12
+    visible: clockView.positionedAtTop || revealProgress > 0
+    opacity: revealProgress
+    y: hiddenY + (shownY - hiddenY) * revealProgress
+    spacing: 12
+
+    Behavior on revealProgress {
+      NumberAnimation {
+        duration: 140
+        easing.type: Easing.OutCubic
+      }
+    }
+
+    IconButton {
+      source: "qrc:/icons/keyboard.svg"
+      tint: root.iconTint
+      onClicked: root.keyboardLayoutRequested()
+    }
+
+    IconButton {
+      source: "qrc:/icons/power.svg"
+      tint: root.iconTint
+      onClicked: root.powerRequested()
     }
   }
 
