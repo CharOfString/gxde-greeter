@@ -216,6 +216,8 @@ FocusScope {
             layer.effect: MultiEffect {
               maskEnabled: true
               maskSource: avatarMask
+              maskThresholdMin: 0.5
+              maskSpreadAtMin: 1.0
             }
           }
         }
