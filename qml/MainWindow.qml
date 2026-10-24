@@ -40,6 +40,7 @@ Window {
   //      user only carries username / fullName.
   //   3. On failure call showPasswordError() (no argument shows "鉴权失败").
   property bool authBackendAvailable: false
+  property var availablePowerActions: ["reboot", "shutdown", "suspend"]
   property bool virtualKeyboardRequested: false
   // How far the on-screen keyboard currently reaches up from the bottom.
   readonly property real keyboardInset: virtualKeyboard.visible
@@ -60,7 +61,7 @@ Window {
   signal userSelected(int index, var user)
   signal passwordSubmitted(int index, var user, string password)
   signal manualLoginRequested()
-  signal powerRequested()
+  signal powerRequested(string action)
 
   width: 640
   height: 480
@@ -378,9 +379,37 @@ Window {
       }
 
       IconButton {
+        id: powerButton
+
         source: "qrc:/icons/power.svg"
         tint: root.iconTint
-        onClicked: root.powerRequested()
+        onClicked: powerMenu.opened ? powerMenu.close() : powerMenu.open()
+      }
+    }
+  }
+
+  PowerMenu {
+    id: powerMenu
+
+    readonly property point anchor: {
+      operationView.x
+      operationView.y
+      return powerButton.mapToItem(parent, powerButton.width, 0)
+    }
+
+    parent: Overlay.overlay
+    z: 20
+    x: Math.round(anchor.x - width)
+    y: Math.round(anchor.y - height - 8)
+    backdrop: windowContent
+    availableActions: root.availablePowerActions
+    originCorner: Item.BottomRight
+    onTriggered: (action) => root.powerRequested(action)
+    onClosed: {
+      if (passwordCard.opened) {
+        passwordCard.forceActiveFocus()
+      } else {
+        keyCatcher.forceActiveFocus()
       }
     }
   }

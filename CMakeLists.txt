@@ -58,6 +58,8 @@ set_source_files_properties(qml/components/VirtualKeyboardPanel.qml PROPERTIES
   QT_RESOURCE_ALIAS VirtualKeyboardPanel.qml)
 set_source_files_properties(qml/components/DtkFrame.qml PROPERTIES
   QT_RESOURCE_ALIAS DtkFrame.qml)
+set_source_files_properties(qml/components/PowerMenu.qml PROPERTIES
+  QT_RESOURCE_ALIAS PowerMenu.qml)
 
 qt_add_qml_module(gxde-greeter
   URI Greeter
@@ -69,6 +71,7 @@ qt_add_qml_module(gxde-greeter
     qml/components/UserAvatar.qml
     qml/components/VirtualKeyboardPanel.qml
     qml/components/DtkFrame.qml
+    qml/components/PowerMenu.qml
 )
 
 target_link_libraries(gxde-greeter PRIVATE
