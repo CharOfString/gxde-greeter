@@ -43,9 +43,6 @@ Popup {
   property bool shown: false
   // Horizontal nudge for the failure shake; the owner adds it to x.
   property real shakeOffset: 0
-
-  // userName is what was typed in askUserName mode, else the userName
-  // property.
   signal submitted(string userName, string password)
 
   function showError(message) {
