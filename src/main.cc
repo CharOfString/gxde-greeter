@@ -282,18 +282,6 @@ QVariantList detectUsers() {
       right.toMap().value("username").toString()) < 0;
   });
 
-  if (users.size() < 10) {
-    for (int index = 1; index <= 10; ++index) {
-      const QString name = QString("USER%1").arg(index);
-      QVariantMap user;
-      user.insert("username", name);
-      user.insert("fullName", name);
-      user.insert("avatar", QString());
-      user.insert("uid", QVariant());
-      users.append(user);
-    }
-  }
-
   return users;
 }
 
