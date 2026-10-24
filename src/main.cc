@@ -288,6 +288,11 @@ QVariantList detectUsers() {
 }  // namespace
 
 int main(int argc, char* argv[]) {
+  // The on-screen keyboard (qml/components/VirtualKeyboardPanel.qml) only
+  // receives input through the Qt Virtual Keyboard input context.
+  qputenv("QT_IM_MODULE", QByteArrayLiteral("qtvirtualkeyboard"));
+  // res/vkb-style, registered where Qt Virtual Keyboard looks up styles.
+  qputenv("QT_VIRTUALKEYBOARD_STYLE", QByteArrayLiteral("gxde"));
   QGuiApplication app(argc, argv);
 
   QQmlApplicationEngine engine;

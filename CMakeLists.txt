@@ -54,6 +54,10 @@ set_source_files_properties(qml/components/PasswordCard.qml PROPERTIES
   QT_RESOURCE_ALIAS PasswordCard.qml)
 set_source_files_properties(qml/components/UserAvatar.qml PROPERTIES
   QT_RESOURCE_ALIAS UserAvatar.qml)
+set_source_files_properties(qml/components/VirtualKeyboardPanel.qml PROPERTIES
+  QT_RESOURCE_ALIAS VirtualKeyboardPanel.qml)
+set_source_files_properties(qml/components/DtkFrame.qml PROPERTIES
+  QT_RESOURCE_ALIAS DtkFrame.qml)
 
 qt_add_qml_module(gxde-greeter
   URI Greeter
@@ -63,6 +67,8 @@ qt_add_qml_module(gxde-greeter
     qml/components/UserSelecter.qml
     qml/components/PasswordCard.qml
     qml/components/UserAvatar.qml
+    qml/components/VirtualKeyboardPanel.qml
+    qml/components/DtkFrame.qml
 )
 
 target_link_libraries(gxde-greeter PRIVATE

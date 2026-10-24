@@ -6,14 +6,10 @@
 
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Effects
 
-// Modal login dialog, either for a chosen user (avatar and name above the
+// Login dialog, either for a chosen user (avatar and name above the
 // password) or, with askUserName, for a user not in the list (user name and
-// password fields, no avatar). The frame follows the DTK menus
-// of gxde-dock's V23 mode (frame/util/styledmenu.cpp, v23menustyle.cpp):
-// radius 8, frosted translucent window color, a dark outer and a light inner
-// hairline and a soft drop shadow.
+// password fields, no avatar), in a DTK menu styled DtkFrame.
 Popup {
   id: card
 
@@ -27,8 +23,6 @@ Popup {
   property url submitIconSource: "qrc:/icons/next-indicator.svg"
 
   // DTK standard palette, as used by V23MenuStyle
-  readonly property color windowColor: light ? "#f8f8f8" : "#252525"
-  readonly property real windowAlpha: light ? 0.45 : 0.6
   readonly property color highlightColor: light ? "#0081ff" : "#024cca"
   readonly property color highlightedTextColor: light ? "#ffffff" : "#f1f6ff"
   readonly property color textColor: light ? "#000000" : "#ffffff"
@@ -37,7 +31,6 @@ Popup {
   readonly property color fieldColor: light ? "#14000000" : "#14ffffff"
   readonly property int frameRadius: 8
   readonly property int itemRadius: 6
-  readonly property int backdropPadding: 32
   // True from the moment the dialog starts showing until it starts hiding,
   // for driving effects behind it in step with the transitions.
   property bool shown: false
@@ -73,11 +66,13 @@ Popup {
   width: 300
   padding: 16
   topPadding: 20
-  modal: true
+  // Not modal so the bottom bar (on-screen keyboard toggle) stays usable;
+  // the owner dims the scene and closes the dialog on outside presses.
+  modal: false
   focus: true
   margins: 12
   transformOrigin: Popup.Center
-  closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+  closePolicy: Popup.CloseOnEscape
 
   onAboutToShow: {
     card.shown = true
@@ -95,16 +90,6 @@ Popup {
     }
   }
 
-  Overlay.modal: Rectangle {
-    color: "#33000000"
-
-    Behavior on opacity {
-      NumberAnimation {
-        duration: 180
-        easing.type: Easing.OutCubic
-      }
-    }
-  }
 
   enter: Transition {
     ParallelAnimation {
@@ -142,145 +127,11 @@ Popup {
     }
   }
 
-  background: Item {
-    id: frame
-
-    // The backdrop region behind the card, padded so the blur has real
-    // pixels to sample at the edges.
-    readonly property rect backdropRect: {
-      card.x
-      card.y
-      card.scale
-      card.opened
-      if (!card.backdrop || width <= 0 || height <= 0) {
-        return Qt.rect(0, 0, 0, 0)
-      }
-      return frame.mapToItem(card.backdrop,
-        -card.backdropPadding, -card.backdropPadding,
-        width + card.backdropPadding * 2, height + card.backdropPadding * 2)
-    }
-
-    // Drop shadow, cut out under the card so the translucent fill does
-    // not show a dark core.
-    Item {
-      id: shadowLayer
-
-      anchors.fill: parent
-      anchors.margins: -16
-      layer.enabled: true
-      layer.effect: MultiEffect {
-        maskEnabled: true
-        maskInverted: true
-        maskSource: shadowCutout
-        maskThresholdMin: 0.5
-        maskSpreadAtMin: 1.0
-      }
-
-      Rectangle {
-        id: shadowShape
-
-        x: 16
-        y: 16
-        width: frame.width
-        height: frame.height
-        radius: card.frameRadius
-        color: "black"
-        visible: false
-      }
-
-      MultiEffect {
-        anchors.fill: shadowShape
-        source: shadowShape
-        shadowEnabled: true
-        shadowColor: "black"
-        shadowOpacity: 0.2
-        shadowBlur: 0.6
-        blurMax: 16
-        shadowVerticalOffset: 2
-      }
-    }
-
-    Item {
-      id: shadowCutout
-
-      width: shadowLayer.width
-      height: shadowLayer.height
-      visible: false
-      layer.enabled: true
-
-      Rectangle {
-        x: 16
-        y: 16
-        width: frame.width
-        height: frame.height
-        radius: card.frameRadius
-        antialiasing: true
-      }
-    }
-
-    ShaderEffectSource {
-      id: backdropSource
-
-      sourceItem: card.backdrop
-      sourceRect: frame.backdropRect
-      visible: false
-      live: true
-    }
-
-    Item {
-      id: backdropMask
-
-      width: frame.width + card.backdropPadding * 2
-      height: frame.height + card.backdropPadding * 2
-      visible: false
-      layer.enabled: true
-
-      Rectangle {
-        x: card.backdropPadding
-        y: card.backdropPadding
-        width: frame.width
-        height: frame.height
-        radius: card.frameRadius
-        antialiasing: true
-      }
-    }
-
-    MultiEffect {
-      x: -card.backdropPadding
-      y: -card.backdropPadding
-      width: backdropMask.width
-      height: backdropMask.height
-      visible: card.backdrop !== null
-      source: backdropSource
-      autoPaddingEnabled: false
-      blurEnabled: true
-      blur: 1.0
-      blurMax: 32
-      maskEnabled: true
-      maskSource: backdropMask
-      maskThresholdMin: 0.5
-      maskSpreadAtMin: 1.0
-    }
-
-    Rectangle {
-      anchors.fill: parent
-      radius: card.frameRadius
-      antialiasing: true
-      color: Qt.rgba(card.windowColor.r, card.windowColor.g,
-        card.windowColor.b, card.backdrop ? card.windowAlpha : 1.0)
-      border.width: 1
-      border.color: card.light ? "#1f000000" : "#80000000"
-
-      Rectangle {
-        anchors.fill: parent
-        anchors.margins: 1
-        radius: card.frameRadius - 1
-        antialiasing: true
-        color: "transparent"
-        border.width: 1
-        border.color: card.light ? "#99ffffff" : "#1affffff"
-      }
-    }
+  background: DtkFrame {
+    light: card.light
+    backdrop: card.backdrop
+    radius: card.frameRadius
+    trackedGeometry: [card.x, card.y, card.scale, card.opened]
   }
 
   contentItem: Column {

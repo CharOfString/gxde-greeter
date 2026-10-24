@@ -40,6 +40,12 @@ Window {
   //      user only carries username / fullName.
   //   3. On failure call showPasswordError() (no argument shows "鉴权失败").
   property bool authBackendAvailable: false
+  property bool virtualKeyboardRequested: false
+  // How far the on-screen keyboard currently reaches up from the bottom.
+  readonly property real keyboardInset: virtualKeyboard.visible
+    ? (virtualKeyboard.height + virtualKeyboard.screenMargin)
+      * virtualKeyboard.slide
+    : 0
   readonly property var weekdays: [
     "星期日",
     "星期一",
@@ -54,7 +60,6 @@ Window {
   signal userSelected(int index, var user)
   signal passwordSubmitted(int index, var user, string password)
   signal manualLoginRequested()
-  signal keyboardLayoutRequested()
   signal powerRequested()
 
   width: 640
@@ -235,6 +240,10 @@ Window {
         id: userSelecter
 
         anchors.centerIn: parent
+        // Moves up with the on-screen keyboard, but never into the clock.
+        anchors.verticalCenterOffset: -Math.min(root.keyboardInset / 2,
+          Math.max(0, (parent.height - height) / 2
+            - (clockView.y + clockView.height + 24)))
         width: Math.min(implicitWidth, Math.max(0, parent.width - 48))
         model: root.userModel
         foregroundColor: "white"
@@ -251,105 +260,127 @@ Window {
           root.openManualLoginDialog()
         }
       }
+    }
 
-      Item {
-        id: gxdeInfoView
+    // Dims the scene behind the password dialog and closes it on presses
+    // outside, while keeping the bottom bar above it usable.
+    Rectangle {
+      id: dialogScrim
 
-        property bool meetsAdditionalVisibilityConditions: true
-        property real revealProgress: clockView.positionedAtTop ? 1.0 : 0.0
-        readonly property real bottomMargin: 12
-        readonly property real hiddenY: parent.height - height / 2
-        readonly property real shownY: parent.height - height - bottomMargin
-        readonly property real logoRightInkPadding: gxdeLogo.width * 5 / 150
-        readonly property real versionLeftMargin: 5 - logoRightInkPadding
-        readonly property rect versionInkBounds:
-          versionMetrics.tightBoundingRect(gxdeVersion.text)
-        readonly property real versionInkTop:
-          gxdeVersion.baselineOffset + versionInkBounds.y
+      anchors.fill: parent
+      color: "#33000000"
+      opacity: root.dialogProgress
+      visible: opacity > 0
 
-        anchors.left: parent.left
-        anchors.leftMargin: 12
-        visible: root.isGxdeOs
-          && root.gxdeReleaseLabel.length > 0
-          && (clockView.positionedAtTop || revealProgress > 0)
-          && meetsAdditionalVisibilityConditions
-        opacity: revealProgress
-        y: hiddenY + (shownY - hiddenY) * revealProgress
-        width: gxdeLogo.width + versionLeftMargin + gxdeVersion.implicitWidth
-        height: gxdeLogo.height
+      MouseArea {
+        anchors.fill: parent
+        enabled: passwordCard.shown
+        hoverEnabled: true
+        acceptedButtons: Qt.AllButtons
+        onPressed: passwordCard.close()
+        onWheel: (wheel) => wheel.accepted = true
+      }
+    }
 
-        Behavior on revealProgress {
-          NumberAnimation {
-            duration: 140
-            easing.type: Easing.OutCubic
-          }
-        }
+    Item {
+      id: gxdeInfoView
 
-        FontMetrics {
-          id: versionMetrics
-          font: gxdeVersion.font
-        }
+      property bool meetsAdditionalVisibilityConditions: true
+      property real revealProgress: clockView.positionedAtTop ? 1.0 : 0.0
+      readonly property real bottomMargin: 12
+      readonly property real hiddenY: parent.height - height / 2
+      readonly property real shownY: parent.height - height - bottomMargin
+      readonly property real logoRightInkPadding: gxdeLogo.width * 5 / 150
+      readonly property real versionLeftMargin: 5 - logoRightInkPadding
+      readonly property rect versionInkBounds:
+        versionMetrics.tightBoundingRect(gxdeVersion.text)
+      readonly property real versionInkTop:
+        gxdeVersion.baselineOffset + versionInkBounds.y
 
-        Image {
-          id: gxdeLogo
-          anchors.bottom: parent.bottom
-          anchors.left: parent.left
+      anchors.left: parent.left
+      anchors.leftMargin: 12
+      visible: root.isGxdeOs
+        && root.gxdeReleaseLabel.length > 0
+        && (clockView.positionedAtTop || revealProgress > 0)
+        && meetsAdditionalVisibilityConditions
+      opacity: revealProgress
+      y: hiddenY + (shownY - hiddenY) * revealProgress - root.keyboardInset
+      width: gxdeLogo.width + versionLeftMargin + gxdeVersion.implicitWidth
+      height: gxdeLogo.height
 
-          width: Math.round(height * 150 / 35)
-          height: 32
-          source: "qrc:/icons/gxde.png"
-          fillMode: Image.PreserveAspectFit
-          smooth: true
-          mipmap: false
-        }
-
-        Text {
-          id: gxdeVersion
-          anchors.left: gxdeLogo.right
-          anchors.leftMargin: gxdeInfoView.versionLeftMargin
-          y: -gxdeInfoView.versionInkTop
-          text: root.gxdeReleaseLabel
-          color: "#d0d0d0"
-          font.family: "Source Han Sans"
-          font.pixelSize: 10
-          font.weight: Font.Light
-          renderType: Text.NativeRendering
+      Behavior on revealProgress {
+        NumberAnimation {
+          duration: 140
+          easing.type: Easing.OutCubic
         }
       }
 
-      Row {
-        id: operationView
+      FontMetrics {
+        id: versionMetrics
+        font: gxdeVersion.font
+      }
 
-        property real revealProgress: clockView.positionedAtTop ? 1.0 : 0.0
-        readonly property real bottomMargin: 12
-        readonly property real hiddenY: parent.height - height / 2
-        readonly property real shownY: parent.height - height - bottomMargin
+      Image {
+        id: gxdeLogo
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
 
-        anchors.right: parent.right
-        anchors.rightMargin: 12
-        visible: clockView.positionedAtTop || revealProgress > 0
-        opacity: revealProgress
-        y: hiddenY + (shownY - hiddenY) * revealProgress
-        spacing: 12
+        width: Math.round(height * 150 / 35)
+        height: 32
+        source: "qrc:/icons/gxde.png"
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+        mipmap: false
+      }
 
-        Behavior on revealProgress {
-          NumberAnimation {
-            duration: 140
-            easing.type: Easing.OutCubic
-          }
+      Text {
+        id: gxdeVersion
+        anchors.left: gxdeLogo.right
+        anchors.leftMargin: gxdeInfoView.versionLeftMargin
+        y: -gxdeInfoView.versionInkTop
+        text: root.gxdeReleaseLabel
+        color: "#d0d0d0"
+        font.family: "Source Han Sans"
+        font.pixelSize: 10
+        font.weight: Font.Light
+        renderType: Text.NativeRendering
+      }
+    }
+
+    Row {
+      id: operationView
+
+      property real revealProgress: clockView.positionedAtTop ? 1.0 : 0.0
+      readonly property real bottomMargin: 12
+      readonly property real hiddenY: parent.height - height / 2
+      readonly property real shownY: parent.height - height - bottomMargin
+
+      anchors.right: parent.right
+      anchors.rightMargin: 12
+      visible: clockView.positionedAtTop || revealProgress > 0
+      opacity: revealProgress
+      y: hiddenY + (shownY - hiddenY) * revealProgress - root.keyboardInset
+      spacing: 12
+
+      Behavior on revealProgress {
+        NumberAnimation {
+          duration: 140
+          easing.type: Easing.OutCubic
         }
+      }
 
-        IconButton {
-          source: "qrc:/icons/keyboard.svg"
-          tint: root.iconTint
-          onClicked: root.keyboardLayoutRequested()
-        }
+      IconButton {
+        source: "qrc:/icons/keyboard.svg"
+        tint: root.iconTint
+        visible: keyboardLoader.status === Loader.Ready
+        onClicked: root.virtualKeyboardRequested
+          = !root.virtualKeyboardRequested
+      }
 
-        IconButton {
-          source: "qrc:/icons/power.svg"
-          tint: root.iconTint
-          onClicked: root.powerRequested()
-        }
+      IconButton {
+        source: "qrc:/icons/power.svg"
+        tint: root.iconTint
+        onClicked: root.powerRequested()
       }
     }
   }
@@ -365,6 +396,7 @@ Window {
     Keys.onPressed: (event) => {
       if (event.key === Qt.Key_Escape) {
         clockView.positionedAtTop = false
+        root.virtualKeyboardRequested = false
       } else {
         root.requestLogin()
       }
@@ -385,7 +417,7 @@ Window {
 
     parent: Overlay.overlay
     x: Math.round((parent.width - width) / 2 + shakeOffset)
-    y: Math.round((parent.height - height) / 2)
+    y: Math.round((parent.height - root.keyboardInset - height) / 2)
     backdrop: windowContent
     onSubmitted: (userName, password) => {
       root.passwordSubmitted(userIndex, askUserName
@@ -398,6 +430,67 @@ Window {
     onClosed: {
       fakeAuthTimer.stop()
       keyCatcher.forceActiveFocus()
+    }
+  }
+
+  // Qt Virtual Keyboard, loaded on the side so the greeter still runs
+  // when the module is not installed (the toggle then stays hidden). Kept
+  // above the password dialog so pressing keys never counts as outside.
+  Popup {
+    id: virtualKeyboard
+
+    property real slide: 0
+
+    readonly property real screenMargin: 12
+
+    parent: Overlay.overlay
+    z: 10
+    width: Math.min(parent.width - 24, 960)
+    x: Math.round((parent.width - width) / 2)
+    y: parent.height - (height + screenMargin) * slide
+    padding: 8
+    modal: false
+    dim: false
+    focus: false
+    closePolicy: Popup.NoAutoClose
+    visible: root.virtualKeyboardRequested && clockView.positionedAtTop
+      && keyboardLoader.status === Loader.Ready
+
+    background: DtkFrame {
+      backdrop: windowContent
+      trackedGeometry: [virtualKeyboard.x, virtualKeyboard.y,
+        virtualKeyboard.visible]
+    }
+
+    enter: Transition {
+      NumberAnimation {
+        property: "slide"
+        from: 0.0
+        to: 1.0
+        duration: 220
+        easing.type: Easing.OutCubic
+      }
+    }
+
+    exit: Transition {
+      NumberAnimation {
+        property: "slide"
+        to: 0.0
+        duration: 180
+        easing.type: Easing.InCubic
+      }
+    }
+
+    contentItem: Item {
+      implicitHeight: keyboardLoader.item ? keyboardLoader.item.height : 0
+
+      Loader {
+        id: keyboardLoader
+
+        width: parent.width
+        asynchronous: true
+        source: "VirtualKeyboardPanel.qml"
+      }
     }
   }
 
