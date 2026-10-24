@@ -29,6 +29,15 @@ Window {
   property real activeBackgroundScale: 1.08
   property real activeBackgroundBlur: 0.55
   property real loginProgress: clockView.positionedAtTop ? 1.0 : 0.0
+  property real dialogProgress: passwordCard.shown ? 1.0 : 0.0
+  // Until a real authentication backend is wired up, every password is
+  // rejected after a short fake check (see fakeAuthTimer).
+  //
+  // To hook up a backend:
+  //   1. Set authBackendAvailable to true, which turns the fake check off.
+  //   2. Handle passwordSubmitted(index, user, password) and authenticate.
+  //   3. On failure call showPasswordError() (no argument shows "鉴权失败").
+  property bool authBackendAvailable: false
   readonly property var weekdays: [
     "星期日",
     "星期一",
@@ -41,6 +50,7 @@ Window {
 
   signal loginRequested()
   signal userSelected(int index, var user)
+  signal passwordSubmitted(int index, var user, string password)
   signal manualLoginRequested()
   signal keyboardLayoutRequested()
   signal powerRequested()
@@ -50,6 +60,13 @@ Window {
   visible: true
   title: "GXDM Greeter"
   color: "#101010"
+
+  Behavior on dialogProgress {
+    NumberAnimation {
+      duration: 180
+      easing.type: Easing.OutCubic
+    }
+  }
 
   Behavior on loginProgress {
     NumberAnimation {
@@ -65,6 +82,21 @@ Window {
       + weekdays[value.getDay()]
   }
 
+  function openPasswordDialog(index, user) {
+    passwordCard.userIndex = index
+    passwordCard.user = user
+    passwordCard.userName = userSelecter.fullNameFor(user)
+    passwordCard.userAvatar = userSelecter.avatarFor(user)
+    passwordCard.open()
+  }
+
+  // Shows an authentication failure: the message in the open password
+  // dialog and a red glow around the screen edges.
+  function showPasswordError(message) {
+    passwordCard.showError(message || qsTr("鉴权失败"))
+    authFailureGlow.flash()
+  }
+
   function requestLogin() {
     clockView.positionedAtTop = true
     root.loginRequested()
@@ -78,54 +110,232 @@ Window {
   }
 
   Item {
-    id: backgroundLayer
+    id: windowContent
 
     anchors.fill: parent
-    scale: 1.0 + (root.activeBackgroundScale - 1.0) * root.loginProgress
 
     Item {
-      id: backgroundSource
+      id: backgroundLayer
 
       anchors.fill: parent
+      scale: 1.0 + (root.activeBackgroundScale - 1.0) * root.loginProgress
 
-      Image {
-        anchors.fill: parent
-        source: root.backgroundUri
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: true
-        cache: false
-        smooth: true
-        visible: root.backgroundUri.toString() !== ""
-      }
+      Item {
+        id: backgroundSource
 
-      Rectangle {
         anchors.fill: parent
-        visible: root.backgroundUri.toString() === ""
-        gradient: Gradient {
-          GradientStop { position: 0; color: "#e9def8" }
-          GradientStop { position: 1; color: "#cfdff2" }
+
+        Image {
+          anchors.fill: parent
+          source: root.backgroundUri
+          fillMode: Image.PreserveAspectCrop
+          asynchronous: true
+          cache: false
+          smooth: true
+          visible: root.backgroundUri.toString() !== ""
+        }
+
+        Rectangle {
+          anchors.fill: parent
+          visible: root.backgroundUri.toString() === ""
+          gradient: Gradient {
+            GradientStop { position: 0; color: "#e9def8" }
+            GradientStop { position: 1; color: "#cfdff2" }
+          }
         }
       }
+
+      MultiEffect {
+        anchors.fill: backgroundSource
+        source: backgroundSource
+        visible: root.loginProgress > 0
+        blurEnabled: true
+        blurMax: 32
+        blur: root.activeBackgroundBlur * root.loginProgress
+        autoPaddingEnabled: false
+      }
     }
 
-    MultiEffect {
-      anchors.fill: backgroundSource
-      source: backgroundSource
-      visible: root.loginProgress > 0
-      blurEnabled: true
-      blurMax: 32
-      blur: root.activeBackgroundBlur * root.loginProgress
-      autoPaddingEnabled: false
+    Rectangle {
+      anchors.fill: parent
+      color: "transparent"
+      gradient: Gradient {
+        GradientStop { position: 0.0; color: "#00000000" }
+        GradientStop { position: 0.55; color: "#00000000" }
+        GradientStop { position: 1.0; color: "#36000000" }
+      }
     }
-  }
 
-  Rectangle {
-    anchors.fill: parent
-    color: "transparent"
-    gradient: Gradient {
-      GradientStop { position: 0.0; color: "#00000000" }
-      GradientStop { position: 0.55; color: "#00000000" }
-      GradientStop { position: 1.0; color: "#36000000" }
+    Item {
+      id: sceneContent
+
+      anchors.fill: parent
+      opacity: 1.0 - 0.7 * root.dialogProgress
+      layer.enabled: root.dialogProgress > 0
+      layer.effect: MultiEffect {
+        blurEnabled: true
+        blurMax: 32
+        blur: 0.8 * root.dialogProgress
+        autoPaddingEnabled: false
+      }
+
+      Item {
+        id: clockView
+
+        property bool positionedAtTop: false
+
+        x: (parent.width - width) / 2
+        y: positionedAtTop ? 72 : (parent.height - height) / 2
+        width: Math.max(timeLabel.width, promptLabel.width)
+        height: timeLabel.inkHeight + 8 + promptLabel.inkHeight
+
+        Behavior on y {
+          NumberAnimation {
+            duration: 250
+            easing.type: Easing.OutExpo
+          }
+        }
+
+        ShadowText {
+          id: timeLabel
+
+          anchors.horizontalCenter: parent.horizontalCenter
+          y: -inkTop
+          text: Qt.formatTime(root.now, "hh:mm")
+          pixelSize: 48
+          weight: Font.Black
+          shadowOpacity: 0.24
+        }
+
+        ShadowText {
+          id: promptLabel
+
+          anchors.horizontalCenter: parent.horizontalCenter
+          y: timeLabel.inkHeight + 8 - inkTop
+          text: dateLabel(root.now)
+          pixelSize: 16
+          weight: Font.Light
+          shadowOpacity: 0.22
+        }
+      }
+
+      UserSelecter {
+        id: userSelecter
+
+        anchors.centerIn: parent
+        width: Math.min(implicitWidth, Math.max(0, parent.width - 48))
+        model: root.userModel
+        foregroundColor: "white"
+        visible: clockView.positionedAtTop || root.loginProgress > 0
+        enabled: clockView.positionedAtTop
+        opacity: root.loginProgress
+        revealed: clockView.positionedAtTop
+        onUserConfirmed: (index, user) => {
+          root.userSelected(index, user)
+          root.openPasswordDialog(index, user)
+        }
+        onNotListedRequested: root.manualLoginRequested()
+      }
+
+      Item {
+        id: gxdeInfoView
+
+        property bool meetsAdditionalVisibilityConditions: true
+        property real revealProgress: clockView.positionedAtTop ? 1.0 : 0.0
+        readonly property real bottomMargin: 12
+        readonly property real hiddenY: parent.height - height / 2
+        readonly property real shownY: parent.height - height - bottomMargin
+        readonly property real logoRightInkPadding: gxdeLogo.width * 5 / 150
+        readonly property real versionLeftMargin: 5 - logoRightInkPadding
+        readonly property rect versionInkBounds:
+          versionMetrics.tightBoundingRect(gxdeVersion.text)
+        readonly property real versionInkTop:
+          gxdeVersion.baselineOffset + versionInkBounds.y
+
+        anchors.left: parent.left
+        anchors.leftMargin: 12
+        visible: root.isGxdeOs
+          && root.gxdeReleaseLabel.length > 0
+          && (clockView.positionedAtTop || revealProgress > 0)
+          && meetsAdditionalVisibilityConditions
+        opacity: revealProgress
+        y: hiddenY + (shownY - hiddenY) * revealProgress
+        width: gxdeLogo.width + versionLeftMargin + gxdeVersion.implicitWidth
+        height: gxdeLogo.height
+
+        Behavior on revealProgress {
+          NumberAnimation {
+            duration: 140
+            easing.type: Easing.OutCubic
+          }
+        }
+
+        FontMetrics {
+          id: versionMetrics
+          font: gxdeVersion.font
+        }
+
+        Image {
+          id: gxdeLogo
+          anchors.bottom: parent.bottom
+          anchors.left: parent.left
+
+          width: Math.round(height * 150 / 35)
+          height: 32
+          source: "qrc:/icons/gxde.png"
+          fillMode: Image.PreserveAspectFit
+          smooth: true
+          mipmap: false
+        }
+
+        Text {
+          id: gxdeVersion
+          anchors.left: gxdeLogo.right
+          anchors.leftMargin: gxdeInfoView.versionLeftMargin
+          y: -gxdeInfoView.versionInkTop
+          text: root.gxdeReleaseLabel
+          color: "#d0d0d0"
+          font.family: "Source Han Sans"
+          font.pixelSize: 10
+          font.weight: Font.Light
+          renderType: Text.NativeRendering
+        }
+      }
+
+      Row {
+        id: operationView
+
+        property real revealProgress: clockView.positionedAtTop ? 1.0 : 0.0
+        readonly property real bottomMargin: 12
+        readonly property real hiddenY: parent.height - height / 2
+        readonly property real shownY: parent.height - height - bottomMargin
+
+        anchors.right: parent.right
+        anchors.rightMargin: 12
+        visible: clockView.positionedAtTop || revealProgress > 0
+        opacity: revealProgress
+        y: hiddenY + (shownY - hiddenY) * revealProgress
+        spacing: 12
+
+        Behavior on revealProgress {
+          NumberAnimation {
+            duration: 140
+            easing.type: Easing.OutCubic
+          }
+        }
+
+        IconButton {
+          source: "qrc:/icons/keyboard.svg"
+          tint: root.iconTint
+          onClicked: root.keyboardLayoutRequested()
+        }
+
+        IconButton {
+          source: "qrc:/icons/power.svg"
+          tint: root.iconTint
+          onClicked: root.powerRequested()
+        }
+      }
     }
   }
 
@@ -152,158 +362,131 @@ Window {
     onTapped: root.requestLogin()
   }
 
-  Item {
-    id: clockView
+  PasswordCard {
+    id: passwordCard
 
-    property bool positionedAtTop: false
+    property int userIndex: -1
+    property var user: null
 
-    x: (parent.width - width) / 2
-    y: positionedAtTop ? 72 : (parent.height - height) / 2
-    width: Math.max(timeLabel.width, promptLabel.width)
-    height: timeLabel.inkHeight + 8 + promptLabel.inkHeight
-
-    Behavior on y {
-      NumberAnimation {
-        duration: 250
-        easing.type: Easing.OutExpo
+    parent: Overlay.overlay
+    x: Math.round((parent.width - width) / 2 + shakeOffset)
+    y: Math.round((parent.height - height) / 2)
+    backdrop: windowContent
+    onSubmitted: (password) => {
+      root.passwordSubmitted(userIndex, user, password)
+      if (!root.authBackendAvailable) {
+        busy = true
+        fakeAuthTimer.restart()
       }
     }
-
-    ShadowText {
-      id: timeLabel
-
-      anchors.horizontalCenter: parent.horizontalCenter
-      y: -inkTop
-      text: Qt.formatTime(root.now, "hh:mm")
-      pixelSize: 48
-      weight: Font.Black
-      shadowOpacity: 0.24
-    }
-
-    ShadowText {
-      id: promptLabel
-
-      anchors.horizontalCenter: parent.horizontalCenter
-      y: timeLabel.inkHeight + 8 - inkTop
-      text: dateLabel(root.now)
-      pixelSize: 16
-      weight: Font.Light
-      shadowOpacity: 0.22
+    onClosed: {
+      fakeAuthTimer.stop()
+      keyCatcher.forceActiveFocus()
     }
   }
 
-  UserSelecter {
-    id: userSelecter
+  Timer {
+    id: fakeAuthTimer
 
-    anchors.centerIn: parent
-    width: Math.min(implicitWidth, Math.max(0, parent.width - 48))
-    model: root.userModel
-    foregroundColor: "white"
-    visible: clockView.positionedAtTop || root.loginProgress > 0
-    enabled: clockView.positionedAtTop
-    opacity: root.loginProgress
-    revealed: clockView.positionedAtTop
-    onUserConfirmed: (index, user) => root.userSelected(index, user)
-    onNotListedRequested: root.manualLoginRequested()
+    interval: 400
+    onTriggered: root.showPasswordError("")
   }
 
   Item {
-    id: gxdeInfoView
+    id: authFailureGlow
 
-    property bool meetsAdditionalVisibilityConditions: true
-    property real revealProgress: clockView.positionedAtTop ? 1.0 : 0.0
-    readonly property real bottomMargin: 12
-    readonly property real hiddenY: parent.height - height / 2
-    readonly property real shownY: parent.height - height - bottomMargin
-    readonly property real logoRightInkPadding: gxdeLogo.width * 5 / 150
-    readonly property real versionLeftMargin: 5 - logoRightInkPadding
-    readonly property rect versionInkBounds:
-      versionMetrics.tightBoundingRect(gxdeVersion.text)
-    readonly property real versionInkTop:
-      gxdeVersion.baselineOffset + versionInkBounds.y
+    readonly property color glowColor: "#be543c"
+    readonly property real glowSize: Math.min(width, height) * 0.14
 
-    anchors.left: parent.left
-    anchors.leftMargin: 12
-    visible: root.isGxdeOs
-      && root.gxdeReleaseLabel.length > 0
-      && (clockView.positionedAtTop || revealProgress > 0)
-      && meetsAdditionalVisibilityConditions
-    opacity: revealProgress
-    y: hiddenY + (shownY - hiddenY) * revealProgress
-    width: gxdeLogo.width + versionLeftMargin + gxdeVersion.implicitWidth
-    height: gxdeLogo.height
+    function flash() {
+      flashAnimation.restart()
+    }
 
-    Behavior on revealProgress {
+    // In the overlay so it sits above the dialog's dimmer.
+    parent: Overlay.overlay
+    anchors.fill: parent
+    z: 100
+    opacity: 0
+    visible: opacity > 0
+
+    SequentialAnimation {
+      id: flashAnimation
+
       NumberAnimation {
-        duration: 140
+        target: authFailureGlow
+        property: "opacity"
+        to: 1.0
+        duration: 160
         easing.type: Easing.OutCubic
+      }
+      PauseAnimation {
+        duration: 700
+      }
+      NumberAnimation {
+        target: authFailureGlow
+        property: "opacity"
+        to: 0.0
+        duration: 900
+        easing.type: Easing.InOutQuad
       }
     }
 
-    FontMetrics {
-      id: versionMetrics
-      font: gxdeVersion.font
-    }
+    component EdgeGlow: Rectangle {
+      required property real edgeRotation
 
-    Image {
-      id: gxdeLogo
-      anchors.bottom: parent.bottom
-      anchors.left: parent.left
-
-      width: Math.round(height * 150 / 35)
-      height: 32
-      source: "qrc:/icons/gxde.png"
-      fillMode: Image.PreserveAspectFit
-      smooth: true
-      mipmap: false
-    }
-
-    Text {
-      id: gxdeVersion
-      anchors.left: gxdeLogo.right
-      anchors.leftMargin: gxdeInfoView.versionLeftMargin
-      y: -gxdeInfoView.versionInkTop
-      text: root.gxdeReleaseLabel
-      color: "#d0d0d0"
-      font.family: "Source Han Sans"
-      font.pixelSize: 10
-      font.weight: Font.Light
-      renderType: Text.NativeRendering
-    }
-  }
-
-  Row {
-    id: operationView
-
-    property real revealProgress: clockView.positionedAtTop ? 1.0 : 0.0
-    readonly property real bottomMargin: 12
-    readonly property real hiddenY: parent.height - height / 2
-    readonly property real shownY: parent.height - height - bottomMargin
-
-    anchors.right: parent.right
-    anchors.rightMargin: 12
-    visible: clockView.positionedAtTop || revealProgress > 0
-    opacity: revealProgress
-    y: hiddenY + (shownY - hiddenY) * revealProgress
-    spacing: 12
-
-    Behavior on revealProgress {
-      NumberAnimation {
-        duration: 140
-        easing.type: Easing.OutCubic
+      color: "transparent"
+      rotation: edgeRotation
+      gradient: Gradient {
+        GradientStop {
+          position: 0.0
+          color: Qt.rgba(authFailureGlow.glowColor.r,
+            authFailureGlow.glowColor.g, authFailureGlow.glowColor.b, 0.6)
+        }
+        GradientStop {
+          position: 0.35
+          color: Qt.rgba(authFailureGlow.glowColor.r,
+            authFailureGlow.glowColor.g, authFailureGlow.glowColor.b, 0.22)
+        }
+        GradientStop {
+          position: 1.0
+          color: Qt.rgba(authFailureGlow.glowColor.r,
+            authFailureGlow.glowColor.g, authFailureGlow.glowColor.b, 0.0)
+        }
       }
     }
 
-    IconButton {
-      source: "qrc:/icons/keyboard.svg"
-      tint: root.iconTint
-      onClicked: root.keyboardLayoutRequested()
+    // Each edge is a vertical gradient fading inward from the screen edge,
+    // rotated into place around its own center.
+    EdgeGlow {
+      edgeRotation: 0
+      x: 0
+      y: 0
+      width: parent.width
+      height: parent.glowSize
     }
 
-    IconButton {
-      source: "qrc:/icons/power.svg"
-      tint: root.iconTint
-      onClicked: root.powerRequested()
+    EdgeGlow {
+      edgeRotation: 180
+      x: 0
+      y: parent.height - height
+      width: parent.width
+      height: parent.glowSize
+    }
+
+    EdgeGlow {
+      edgeRotation: -90
+      x: (parent.glowSize - parent.height) / 2
+      y: (parent.height - parent.glowSize) / 2
+      width: parent.height
+      height: parent.glowSize
+    }
+
+    EdgeGlow {
+      edgeRotation: 90
+      x: parent.width - (parent.glowSize + parent.height) / 2
+      y: (parent.height - parent.glowSize) / 2
+      width: parent.height
+      height: parent.glowSize
     }
   }
 

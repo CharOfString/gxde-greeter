@@ -50,6 +50,10 @@ set_source_files_properties(qml/MainWindow.qml PROPERTIES
   QT_RESOURCE_ALIAS MainWindow.qml)
 set_source_files_properties(qml/components/UserSelecter.qml PROPERTIES
   QT_RESOURCE_ALIAS UserSelecter.qml)
+set_source_files_properties(qml/components/PasswordCard.qml PROPERTIES
+  QT_RESOURCE_ALIAS PasswordCard.qml)
+set_source_files_properties(qml/components/UserAvatar.qml PROPERTIES
+  QT_RESOURCE_ALIAS UserAvatar.qml)
 
 qt_add_qml_module(gxde-greeter
   URI Greeter
@@ -57,6 +61,8 @@ qt_add_qml_module(gxde-greeter
   QML_FILES
     qml/MainWindow.qml
     qml/components/UserSelecter.qml
+    qml/components/PasswordCard.qml
+    qml/components/UserAvatar.qml
 )
 
 target_link_libraries(gxde-greeter PRIVATE

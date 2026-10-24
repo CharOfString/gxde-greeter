@@ -81,20 +81,6 @@ FocusScope {
     return user.avatar || user.avatarUrl || user.icon || ""
   }
 
-  function initialsFor(name) {
-    const trimmedName = String(name || "").trim()
-    if (trimmedName.length === 0) {
-      return "?"
-    }
-
-    const words = trimmedName.split(/\s+/)
-    if (words.length === 1) {
-      return words[0].charAt(0).toUpperCase()
-    }
-    return (words[0].charAt(0) + words[words.length - 1].charAt(0))
-      .toUpperCase()
-  }
-
   function clamp01(value) {
     return Math.max(0, Math.min(1, value))
   }
@@ -327,55 +313,14 @@ FocusScope {
               }
             }
 
-            Rectangle {
+            UserAvatar {
               id: avatarFrame
 
               anchors.fill: parent
               radius: root.avatarRadius
-              color: root.avatarFallbackColor
-              antialiasing: true
-
-              Text {
-                anchors.centerIn: parent
-                text: root.initialsFor(userDelegate.fullName)
-                color: "#4f555b"
-                font.pixelSize: Math.round(root.avatarSize * 0.34)
-                font.weight: Font.Medium
-              }
-
-              Rectangle {
-                id: avatarMask
-
-                anchors.fill: parent
-                radius: avatarFrame.radius
-                color: "white"
-                antialiasing: true
-                visible: false
-                layer.enabled: true
-                layer.smooth: true
-                layer.samples: 4
-              }
-
-              Image {
-                id: avatarImage
-
-                anchors.fill: parent
-                source: userDelegate.avatarSource
-                fillMode: Image.PreserveAspectCrop
-                asynchronous: true
-                cache: true
-                smooth: true
-                mipmap: true
-                visible: source.toString() !== "" && status === Image.Ready
-                layer.enabled: visible
-                layer.smooth: true
-                layer.effect: MultiEffect {
-                  maskEnabled: true
-                  maskSource: avatarMask
-                  maskThresholdMin: 0.5
-                  maskSpreadAtMin: 1.0
-                }
-              }
+              source: userDelegate.avatarSource
+              name: userDelegate.fullName
+              fallbackColor: root.avatarFallbackColor
 
               Rectangle {
                 anchors.fill: parent
