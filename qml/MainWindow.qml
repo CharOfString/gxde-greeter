@@ -202,6 +202,7 @@ Window {
     visible: clockView.positionedAtTop || root.loginProgress > 0
     enabled: clockView.positionedAtTop
     opacity: root.loginProgress
+    revealed: clockView.positionedAtTop
     onUserConfirmed: (index, user) => root.userSelected(index, user)
     onNotListedRequested: root.manualLoginRequested()
   }

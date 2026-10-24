@@ -23,13 +23,24 @@ FocusScope {
   property int navigationSize: 32
   property int navigationGutter: 40
   property int namePixelSize: 13
+  property int avatarHeadroom: 4
+  property bool revealed: true
+  property real revealProgress: revealed ? 1.0 : 0.0
   property bool showNotListed: true
   property string notListedText: qsTr("未列出？")
   property url previousIconSource: "qrc:/icons/prev.svg"
   property url nextIconSource: "qrc:/icons/next.svg"
+  property real pendingWheelAngle: 0
 
   signal userConfirmed(int index, var user)
   signal notListedRequested()
+
+  Behavior on revealProgress {
+    NumberAnimation {
+      duration: root.revealed ? 900 : 240
+      easing.type: Easing.Linear
+    }
+  }
 
   implicitWidth: 560
   implicitHeight: carousel.height + (showNotListed ? 30 : 0)
@@ -84,6 +95,20 @@ FocusScope {
       .toUpperCase()
   }
 
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, value))
+  }
+
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3)
+  }
+
+  // Entrance progress of the item in the given visual slot, staggered left
+  // to right while the whole selector reveals.
+  function revealAt(slot) {
+    return clamp01((root.revealProgress - Math.min(slot, 6) * 0.05) / 0.45)
+  }
+
   function confirmUser(index) {
     if (index < 0 || index >= modelCount()) {
       return
@@ -103,10 +128,67 @@ FocusScope {
     contentAnimation.start()
   }
 
+  // Scrolls relative to where a running animation is heading, so quick
+  // repeated wheel notches or clicks accumulate instead of being lost.
+  function scrollBy(delta) {
+    const base = contentAnimation.running ? contentAnimation.to
+      : userList.contentX
+    scrollTo(base + delta)
+  }
+
   function scrollPage(direction) {
     const stride = root.delegateWidth + root.delegateSpacing
     const visibleItems = Math.max(1, Math.floor(userList.width / stride))
-    scrollTo(userList.contentX + direction * visibleItems * stride)
+    scrollBy(direction * visibleItems * stride)
+  }
+
+  function handleWheel(event) {
+    if (!userList.hasOverflow) {
+      event.accepted = false
+      return
+    }
+
+    // Only touchpad gestures carry a scroll phase. Mouse wheels may report a
+    // pixelDelta too (Wayland does, in tiny high-resolution steps), so they
+    // go through the angle path and move one user per 120 units.
+    const pixelDelta = Math.abs(event.pixelDelta.x)
+      > Math.abs(event.pixelDelta.y)
+        ? event.pixelDelta.x : event.pixelDelta.y
+    if (event.phase !== Qt.NoScrollPhase && pixelDelta !== 0) {
+      root.pendingWheelAngle = 0
+      contentAnimation.stop()
+      userList.cancelFlick()
+      userList.contentX = boundedContentX(userList.contentX - pixelDelta)
+      event.accepted = true
+      return
+    }
+
+    const angleDelta = Math.abs(event.angleDelta.x)
+      > Math.abs(event.angleDelta.y)
+        ? event.angleDelta.x : event.angleDelta.y
+    if (angleDelta === 0) {
+      event.accepted = false
+      return
+    }
+    if (root.pendingWheelAngle * angleDelta < 0) {
+      root.pendingWheelAngle = 0
+    }
+    root.pendingWheelAngle += angleDelta
+    const steps = Math.trunc(root.pendingWheelAngle / 120)
+    if (steps !== 0) {
+      root.pendingWheelAngle -= steps * 120
+      scrollBy(-steps * (root.delegateWidth + root.delegateSpacing))
+    }
+    event.accepted = true
+  }
+
+  // Covers the area around the list (navigation buttons, gaps, the
+  // "not listed" row); the list has its own handler so the ListView's
+  // built-in wheel scrolling never takes over.
+  WheelHandler {
+    target: null
+    blocking: true
+    onWheel: (event) => root.handleWheel(event)
   }
 
   Item {
@@ -115,7 +197,7 @@ FocusScope {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: parent.top
-    height: root.avatarSize + 30
+    height: root.avatarHeadroom + root.avatarSize + 30
 
     ListView {
       id: userList
@@ -144,7 +226,7 @@ FocusScope {
       rebound: Transition {
         NumberAnimation {
           properties: "x,y"
-          duration: 180
+          duration: 240
           easing.type: Easing.OutCubic
         }
       }
@@ -161,83 +243,182 @@ FocusScope {
         readonly property var userData: root.userAt(index)
         readonly property string fullName: root.fullNameFor(userData)
         readonly property url avatarSource: root.avatarFor(userData)
+        readonly property bool selected: userList.currentIndex === index
+        readonly property bool hovered: avatarHover.hovered
+        readonly property bool pressed: avatarTap.pressed
+        readonly property real stride: root.delegateWidth + root.delegateSpacing
+        readonly property real viewX: x - userList.contentX
+        readonly property real entrance:
+          root.revealAt(Math.max(0, Math.round(viewX / stride)))
+        // Fades items that slide toward an edge with more users hidden
+        // beyond it, hinting that the row can scroll.
+        readonly property real edgeFocus: {
+          if (!userList.hasOverflow) {
+            return 1.0
+          }
+          const zone = root.delegateWidth * 0.9
+          const center = viewX + width / 2
+          const leftRoom = root.clamp01(userList.contentX / zone)
+          const rightRoom = root.clamp01(
+            (userList.maximumContentX - userList.contentX) / zone)
+          const left = 1 - leftRoom * (1 - root.clamp01(center / zone))
+          const right = 1 - rightRoom
+            * (1 - root.clamp01((userList.width - center) / zone))
+          return Math.min(left, right)
+        }
 
         width: root.delegateWidth
         height: userList.height
 
-        Rectangle {
-          id: avatarFrame
+        Item {
+          id: body
 
-          anchors.top: parent.top
-          anchors.horizontalCenter: parent.horizontalCenter
-          width: root.avatarSize
-          height: root.avatarSize
-          radius: root.avatarRadius
-          color: root.avatarFallbackColor
-          antialiasing: true
-          border.width: userList.currentIndex === userDelegate.index
-            || avatarHover.hovered ? 2 : 0
-          border.color: root.selectionColor
+          anchors.fill: parent
+          opacity: root.easeOutCubic(userDelegate.entrance)
+            * (0.35 + 0.65 * userDelegate.edgeFocus)
+
+          Item {
+            id: avatarHolder
+
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: root.avatarHeadroom
+            width: root.avatarSize
+            height: root.avatarSize
+
+            Rectangle {
+              id: shadowShape
+
+              anchors.fill: parent
+              radius: root.avatarRadius
+              color: "black"
+              visible: false
+            }
+
+            MultiEffect {
+              anchors.fill: shadowShape
+              source: shadowShape
+              shadowEnabled: true
+              shadowColor: "black"
+              shadowBlur: 0.8
+              blurMax: 16
+              shadowVerticalOffset: 3
+              shadowOpacity: 0.2
+            }
+
+            Rectangle {
+              id: selectionRing
+
+              anchors.centerIn: parent
+              width: parent.width + 6
+              height: parent.height + 6
+              radius: root.avatarRadius + 3
+              color: "transparent"
+              antialiasing: true
+              border.width: 2
+              border.color: root.selectionColor
+              opacity: userDelegate.selected ? 1.0
+                : userDelegate.hovered ? 0.35 : 0.0
+
+              Behavior on opacity {
+                NumberAnimation {
+                  duration: 160
+                  easing.type: Easing.OutCubic
+                }
+              }
+            }
+
+            Rectangle {
+              id: avatarFrame
+
+              anchors.fill: parent
+              radius: root.avatarRadius
+              color: root.avatarFallbackColor
+              antialiasing: true
+
+              Text {
+                anchors.centerIn: parent
+                text: root.initialsFor(userDelegate.fullName)
+                color: "#4f555b"
+                font.pixelSize: Math.round(root.avatarSize * 0.34)
+                font.weight: Font.Medium
+              }
+
+              Rectangle {
+                id: avatarMask
+
+                anchors.fill: parent
+                radius: avatarFrame.radius
+                color: "white"
+                antialiasing: true
+                visible: false
+                layer.enabled: true
+                layer.smooth: true
+                layer.samples: 4
+              }
+
+              Image {
+                id: avatarImage
+
+                anchors.fill: parent
+                source: userDelegate.avatarSource
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                cache: true
+                smooth: true
+                mipmap: true
+                visible: source.toString() !== "" && status === Image.Ready
+                layer.enabled: visible
+                layer.smooth: true
+                layer.effect: MultiEffect {
+                  maskEnabled: true
+                  maskSource: avatarMask
+                  maskThresholdMin: 0.5
+                  maskSpreadAtMin: 1.0
+                }
+              }
+
+              Rectangle {
+                anchors.fill: parent
+                radius: avatarFrame.radius
+                antialiasing: true
+                color: userDelegate.pressed ? "#26000000"
+                  : userDelegate.hovered ? "#14ffffff" : "#00ffffff"
+
+                Behavior on color {
+                  ColorAnimation {
+                    duration: 120
+                  }
+                }
+              }
+            }
+          }
 
           Text {
-            anchors.centerIn: parent
-            text: root.initialsFor(userDelegate.fullName)
-            color: "#4f555b"
-            font.pixelSize: Math.round(root.avatarSize * 0.34)
-            font.weight: Font.Medium
-          }
+            anchors.top: avatarHolder.bottom
+            anchors.topMargin: 7
+            anchors.horizontalCenter: avatarHolder.horizontalCenter
+            width: parent.width
+            text: userDelegate.fullName
+            color: root.foregroundColor
+            opacity: userDelegate.selected || userDelegate.hovered ? 1.0 : 0.78
+            font.pixelSize: root.namePixelSize
+            font.weight: Font.Normal
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+            maximumLineCount: 1
+            renderType: Text.NativeRendering
 
-          Rectangle {
-            id: avatarMask
-
-            anchors.fill: parent
-            radius: avatarFrame.radius
-            color: "white"
-            antialiasing: true
-            visible: false
-            layer.enabled: true
-            layer.smooth: true
-            layer.samples: 4
-          }
-
-          Image {
-            id: avatarImage
-
-            anchors.fill: parent
-            source: userDelegate.avatarSource
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            cache: true
-            smooth: true
-            mipmap: true
-            visible: source.toString() !== "" && status === Image.Ready
-            layer.enabled: visible
-            layer.smooth: true
-            layer.effect: MultiEffect {
-              maskEnabled: true
-              maskSource: avatarMask
-              maskThresholdMin: 0.5
-              maskSpreadAtMin: 1.0
+            Behavior on opacity {
+              NumberAnimation {
+                duration: 160
+                easing.type: Easing.OutCubic
+              }
             }
           }
         }
 
-        Text {
-          anchors.top: avatarFrame.bottom
-          anchors.topMargin: 7
-          anchors.horizontalCenter: avatarFrame.horizontalCenter
-          width: parent.width
-          text: userDelegate.fullName
-          color: root.foregroundColor
-          font.pixelSize: root.namePixelSize
-          font.weight: Font.Normal
-          horizontalAlignment: Text.AlignHCenter
-          elide: Text.ElideRight
-          maximumLineCount: 1
-          renderType: Text.NativeRendering
-        }
-
         TapHandler {
+          id: avatarTap
           onTapped: root.confirmUser(userDelegate.index)
         }
 
@@ -250,30 +431,7 @@ FocusScope {
       WheelHandler {
         target: null
         blocking: true
-        onWheel: (event) => {
-          if (!userList.hasOverflow) {
-            event.accepted = false
-            return
-          }
-
-          const pixelDelta = Math.abs(event.pixelDelta.x)
-            > Math.abs(event.pixelDelta.y)
-              ? event.pixelDelta.x : event.pixelDelta.y
-          if (pixelDelta !== 0) {
-            contentAnimation.stop()
-            userList.cancelFlick()
-            userList.contentX = root.boundedContentX(
-              userList.contentX - pixelDelta)
-          } else {
-            const angleDelta = Math.abs(event.angleDelta.x)
-              > Math.abs(event.angleDelta.y)
-                ? event.angleDelta.x : event.angleDelta.y
-            const direction = angleDelta > 0 ? -1 : 1
-            root.scrollTo(userList.contentX + direction
-              * (root.delegateWidth + root.delegateSpacing))
-          }
-          event.accepted = true
-        }
+        onWheel: (event) => root.handleWheel(event)
       }
     }
 
@@ -281,13 +439,24 @@ FocusScope {
       id: previousButton
 
       anchors.left: parent.left
-      y: (root.avatarSize - height) / 2
+      y: root.avatarHeadroom + (root.avatarSize - height) / 2
       width: root.navigationSize
       height: root.navigationSize
       padding: 4
       focusPolicy: Qt.NoFocus
       hoverEnabled: true
-      visible: userList.hasOverflow && userList.contentX > 0.5
+      readonly property bool shown: userList.hasOverflow && userList.contentX > 0.5
+      opacity: (shown ? 1.0 : 0.0)
+        * root.clamp01((root.revealProgress - 0.45) / 0.55)
+      visible: opacity > 0
+      enabled: shown
+
+      Behavior on opacity {
+        NumberAnimation {
+          duration: 200
+          easing.type: Easing.OutCubic
+        }
+      }
       icon.source: root.previousIconSource
       icon.width: 24
       icon.height: 24
@@ -310,14 +479,25 @@ FocusScope {
       id: nextButton
 
       anchors.right: parent.right
-      y: (root.avatarSize - height) / 2
+      y: root.avatarHeadroom + (root.avatarSize - height) / 2
       width: root.navigationSize
       height: root.navigationSize
       padding: 4
       focusPolicy: Qt.NoFocus
       hoverEnabled: true
-      visible: userList.hasOverflow
+      readonly property bool shown: userList.hasOverflow
         && userList.contentX < userList.maximumContentX - 0.5
+      opacity: (shown ? 1.0 : 0.0)
+        * root.clamp01((root.revealProgress - 0.45) / 0.55)
+      visible: opacity > 0
+      enabled: shown
+
+      Behavior on opacity {
+        NumberAnimation {
+          duration: 200
+          easing.type: Easing.OutCubic
+        }
+      }
       icon.source: root.nextIconSource
       icon.width: 24
       icon.height: 24
@@ -341,7 +521,7 @@ FocusScope {
 
       target: userList
       property: "contentX"
-      duration: 180
+      duration: 280
       easing.type: Easing.OutCubic
     }
   }
@@ -355,7 +535,27 @@ FocusScope {
     visible: root.showNotListed
     text: root.notListedText
     color: root.foregroundColor
-    opacity: notListedHover.hovered ? 1.0 : 0.78
+    opacity: (notListedHover.hovered ? 1.0 : 0.78)
+      * root.clamp01((root.revealProgress - 0.5) / 0.5)
+    transform: Translate {
+      y: (1 - root.clamp01((root.revealProgress - 0.5) / 0.5)) * 14
+    }
+
+    Rectangle {
+      anchors.top: parent.baseline
+      anchors.topMargin: 3
+      anchors.horizontalCenter: parent.horizontalCenter
+      width: notListedHover.hovered ? parent.width : 0
+      height: 1
+      color: root.foregroundColor
+
+      Behavior on width {
+        NumberAnimation {
+          duration: 240
+          easing.type: Easing.OutCubic
+        }
+      }
+    }
     font.pixelSize: 13
     font.weight: Font.Normal
     renderType: Text.NativeRendering
